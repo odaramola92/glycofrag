@@ -6,6 +6,16 @@ A comprehensive Python package for predicting glycan structures, generating theo
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests: 193/193 ✅](https://img.shields.io/badge/tests-193%2F193%20%E2%9C%85-brightgreen)](https://github.com/odaramola92/glycofrag)
 
+## Monosaccharide Nomenclature
+
+**Important**: Glycofrag distinguishes between monosaccharide types:
+- **N-Glycans**: Use **GlcNAc** (N-acetyl-D-glucosamine) as the base sugar
+  - Motif: Asparagine (N) in N-X-Ser/Thr context (where X ≠ Pro)
+  - Core structure: Two GlcNAc residues linked to asparagine
+- **O-Glycans**: Use **GalNAc** (N-acetyl-D-galactosamine) as the base sugar
+  - Motif: Directly attached to Serine (S) or Threonine (T)
+  - Core structure: Single GalNAc attached to S/T hydroxyl group
+
 ## Features
 
 ✨ **Core Capabilities:**
@@ -299,12 +309,14 @@ GlycanVisualizer.visualize(
 print(glycan.format_structure_tree(structures[0]))
 ```
 
-**Output Colors (SNFG Standard):**
-- 🟦 Blue box: HexNAc
-- 🟢 Green circle: Man (mannose, core)
-- 🟡 Yellow circle: Gal (galactose, antenna)
-- 🔴 Red triangle: Fuc (fucose)
-- 🟣 Magenta diamond: NeuAc (sialic acid)
+**SNFG Monosaccharide Symbols & Colors (as defined in visualizer.py):**
+- Blue square: **GlcNAc** (N-acetyl-D-glucosamine) - N-glycan core and arms
+- Yellow square: **GalNAc** (N-acetyl-D-galactosamine) - O-glycan base
+- Green circle: **Man** (Mannose) - N-glycan core trimannosyl scaffold
+- Yellow circle: **Gal** (Galactose) - N-glycan antenna, O-glycan core
+- Red triangle: **Fuc** (Fucose) - branching and terminal fucosylation
+- Magenta diamond: **NeuAc** (N-acetyl neuraminic acid/sialic acid) - terminal sialylation
+- Gray diamond: **NeuGc** (N-glycolyl neuraminic acid) - alternative sialic acid
 
 ---
 
@@ -456,14 +468,58 @@ if 'Phos' in MODIFICATION_MASSES:
     print(f"Phosphorylation mass: {MODIFICATION_MASSES['Phos']} Da")
 ```
 
+### Fragment Notation
+
+**Peptide fragments** use lowercase notation:
+- b, y (backbone fragments)
+- c, z (alternative cleavage notation)
+
+**Glycan fragments** use uppercase notation:
+- B, Y (BY-series)
+- C, Z (CZ-series)
+
+**Glycopeptide hybrid fragments** combine notation:
+- Y0 (peptide-only ions)
+- Y1 (peptide with glycan)
+- Y1-B2 (hybrid ions combining both series)
+
 ### Reducing End Modifications (for glycans)
-- **Type 0**: Free reducing end (H₂O)
-- **Type 1**: Reduced end (alditol form)
-- **Type 2**: Permethylated free end
-- **Type 3**: Permethylated reduced end
-- **Type 4**: 2-AB labeled
-- **Type 5**: 2-AB labeled and permethylated
-- **Type 6**: Glycopeptide mode (peptide replaces reducing end)
+
+Glycofrag supports 8 reducing end modification types that control how the glycan's reducing end mass is calculated:
+
+- **Type 0**: Free reducing end (H₂O +18.01 Da) - unmodified, default
+- **Type 1**: Reduced end (alditol form +20.03 Da) - after chemical reduction
+- **Type 2**: Permethylated free end - methylation on hydroxyl groups
+- **Type 3**: Permethylated reduced end - both reduction and methylation
+- **Type 4**: 2-AB labeled - fluorescent derivatization (2-aminobenzamide)
+- **Type 5**: 2-AB labeled and permethylated - dual modification
+- **Type 6**: Glycopeptide mode - peptide backbone replaces glycan reducing end (reserved for Glycopeptide class)
+- **Type 7**: Custom - user-defined mass modification (set via `custom_reducing_end_mass` parameter)
+
+**Usage Example:**
+
+```python
+from glycofrag import Glycan
+
+# Type 0: Free (default)
+glycan = Glycan("4501", glycan_type="N")
+
+# Type 2: Permethylated free
+glycan = Glycan("4501", modification_type='permethylated_free')
+
+# Type 4: 2-AB labeled
+glycan = Glycan("4501", modification_type='2ab')
+
+# Type 7: Custom mass (e.g., custom label of 120 Da)
+glycan = Glycan("4501", modification_type='custom', 
+                custom_reducing_end_mass=120.0)
+
+# Type 7 with per-monosaccharide mass (e.g., derivatization on all residues)
+glycan = Glycan("4501", modification_type='custom',
+                custom_mono_masses={'HexNAc': 14.016, 'Hex': 14.016})
+```
+
+**Note on O-glycan cores:** The modification types above simplify O-glycan core classes (0-8) for fragmentation purposes. These types control the reducing end mass, not the biological core type.
 
 ## Fragment Ion Information
 
@@ -541,10 +597,12 @@ GlycanVisualizer.FUC_VERTICAL_OFFSET = -1.2  # default: -0.9 (more negative = sh
 from glycofrag import Glycopeptide
 
 # Define your glycopeptide
+# Note: N-glycosylation requires N in N-X-S/T motif (X ≠ Pro)
+# Sequence below has N at position 1
 gp = Glycopeptide(
-    "EPTETTQSVK",      # Peptide sequence
+    "NFTQSKTTR",       # Peptide sequence with N-glycan site at position 1 (N-F-T motif)
     "4501",             # N-glycan composition
-    2,                  # Glycan attached at position 2 (P = second amino acid, 1-based)
+    1,                  # Glycan attached at position 1 (N = first amino acid, 1-based)
     glycan_type="N"
 )
 
@@ -570,10 +628,11 @@ for exp_mz in experimental_mz:
 from glycofrag import Glycopeptide
 
 # O-glycopeptide with core 1 structure
+# Note: O-glycosylation attaches directly to S or T residues
 o_glyco = Glycopeptide(
-    "TPEPTIDE",        # Note: Threonine at position 1 (1-based indexing)
-    "2201",            # Simple O-glycan (HexNAc-2, Hex-2, Fuc-0)
-    1,                 # Glycosylated at position 1 (T = first amino acid)
+    "PEPTSDES",        # Peptide with Ser at position 4 and Ser at position 8
+    "2201",            # Simple O-glycan (HexNAc-1, Hex-1, Fuc-0) - Core 1 structure
+    4,                 # Glycosylated at position 4 (S = fourth amino acid, 1-based)
     glycan_type="O"
 )
 
@@ -593,10 +652,11 @@ print(f"Peptide backbone ions: {len(y0)}")
 from glycofrag import Glycopeptide
 
 # Define multiple glycopeptides (positions are 1-based)
+# N-glycans require N-X-S/T motif; O-glycans require S/T
 glycoptides = [
-    ("EPTETTQSVK", "4501", 2),  # Position 2 = P
-    ("EPTETTQSVK", "3410", 2),  # Position 2 = P
-    ("TPEPTIDES", "2201", 1),   # Position 1 = T (changed from 0 to 1-based)
+    ("NGSTSEFTGYK", "4501", 1),  # N-glycan at position 1 (N-G-S motif)
+    ("NGSTSEFTGYK", "3410", 1),  # Same site, different glycan
+    ("PEPTSDES", "2201", 4),     # O-glycan at position 4 (Ser)
 ]
 
 results = []
@@ -636,15 +696,18 @@ pytest glycofrag/tests/ --cov=glycofrag --cov-report=html
 - Phase 2.5 (Glycan Fragmentation): 58 tests
 - Phase 3 (Peptide): 34 tests
 - Phase 4 (Glycopeptide): 31 tests
-- **Total: 193 tests** ✅
+- Phase 5 (Edge Cases, Integration, I/O): 201 tests
+- **Total: 354 tests** ✅
 
 ## Citation
 
-If you use Glycofrag in your research, please cite:
+### Methodology Paper
+
+If you use glycofrag in your research, please cite the GlypPRM methodology paper:
 
 ```bibtex
 @article{daramola2026glypprm,
-  title={{GlypPRM: Structural Elucidation of N-Glycans by Integrating Topology Analysis with Molecular Fragment Ions}},
+  title={{GlypPRM: An Automated Analyzer and Quantification Tool for Glycopeptides Parallel Reaction Monitoring}},
   author={Daramola, Oluwatosin and Onigbinde, Sherifdeen and Adeniyi, Moyinoluwa and Gutierrez-Reyes, Cristian D. and Fowowe, Mojibola and Sandilya, Vishal and Mechref, Yehia},
   journal={Analytical Chemistry},
   volume={98},
@@ -657,7 +720,35 @@ If you use Glycofrag in your research, please cite:
 ```
 
 **Plain Text Citation:**
-> Daramola, O.; Onigbinde, S.; Adeniyi, M.; Gutierrez-Reyes, C. D.; Fowowe, M.; Sandilya, V.; Mechref, Y. "GlypPRM: Structural Elucidation of N-Glycans by Integrating Topology Analysis with Molecular Fragment Ions." *Analytical Chemistry* **2026**, *98* (2), 1528-1540. DOI: [10.1021/acs.analchem.5c06005](https://doi.org/10.1021/acs.analchem.5c06005)
+> Daramola, O.; Onigbinde, S.; Adeniyi, M.; Gutierrez-Reyes, C. D.; Fowowe, M.; Sandilya, V.; Mechref, Y. "GlypPRM: An Automated Analyzer and Quantification Tool for Glycopeptides Parallel Reaction Monitoring." *Analytical Chemistry* **2026**, *98* (2), 1528-1540. DOI: [10.1021/acs.analchem.5c06005](https://doi.org/10.1021/acs.analchem.5c06005)
+
+### Software Citation (Optional but Recommended)
+
+To cite the glycofrag software package specifically, we recommend registering the package on [Zenodo](https://zenodo.org) for a persistent DOI. This enables proper attribution of the software itself separately from the methodology paper.
+
+#### How to Generate a Citation
+
+**In Python:**
+```python
+from glycofrag import __version__
+print(f"glycofrag version {__version__}")
+```
+
+**From a CITATION.cff file:**
+The repository includes a `CITATION.cff` file (Citation File Format) that can be used by reference management tools. You can view or use this file directly from the repository.
+
+#### Zenodo Registration (Coming Soon)
+
+Once registered on Zenodo, you'll get a DOI like:
+```bibtex
+@software{daramola2026glycofrag,
+  title={glycofrag: Glycan and Glycopeptide Fragmentation Analysis},
+  author={Daramola, Oluwatosin},
+  year={2026},
+  url={https://github.com/odaramola92/glycofrag},
+  doi={10.5281/zenodo.XXXXXXX}
+}
+```
 
 ## Contributing
 
@@ -677,9 +768,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Acknowledgments
 
-- Based on the GlypPRM algorithm
-- Built with contributions from the glycoproteomics community
-- Mass data sourced from NIST and published literature
+- Implementation of the GlypPRM algorithm as described in the published research
+- Monoisotopic masses from standard biochemistry references
+- SNFG nomenclature for glycan visualization
 
 ## Support
 
@@ -690,14 +781,16 @@ For issues, questions, or suggestions:
 
 ## Changelog
 
-### Version 0.1.0 (2026-02-01)
+### Version 0.1.0 (2026-02-08)
 - ✅ Initial release
 - ✅ Core module with mass calculations
 - ✅ Glycan structure prediction (N and O)
 - ✅ Glycan fragmentation (BY, CZ, A-type series)
 - ✅ Peptide fragmentation (b, y, c, z ions)
 - ✅ Glycopeptide analysis (Y0, Y1, Y-glycan, intact)
-- ✅ 193 unit tests
+- ✅ Visualization with SNFG-compliant symbols
+- ✅ 29 peptide modification types
+- ✅ 354 unit tests
 - ✅ Comprehensive documentation
 
 ---
